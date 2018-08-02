@@ -3,6 +3,7 @@ import json
 import time
 
 # https://github.com/slackapi/python-slackclient
+# pip install slackclient
 from slackclient import SlackClient
 
 # This script invites all full members of a workspace to a particular channel
@@ -33,7 +34,7 @@ def main():
 # The user name is just for printing, it could be blank
 
 def invite_user(sc, user_id, user_name, channel_id):
-	print 'Inviting ' + user_name + ' with ID: ' + user_id + ' to channel ' + channel_id
+	print('Inviting ' + user_name + ' with ID: ' + user_id + ' to channel ' + channel_id)
 
 	response = sc.api_call(
 		"channels.invite",
@@ -41,9 +42,9 @@ def invite_user(sc, user_id, user_name, channel_id):
 		user = user_id)
 
 	if response['ok']:
-		print 'Success'
+		print('Success')
 	else:
-		print 'Could not add ' + user_name + ' with ID: ' + user_id + ' to channel ' + channel_id + ' Error Message: ' + response['error']
+		print('Could not add ' + user_name + ' with ID: ' + user_id + ' to channel ' + channel_id + ' Error Message: ' + response['error'])
 
 # Invite all full members of a workspace to a particular channel
 # Skip if they are bots, deleted, restricted (multi-channel guest)
@@ -66,6 +67,6 @@ def invite_all(sc, delay, channel):
 				time.sleep(api_call_delay)
 
 	else:
-		print 'Could not get all users. Error Message: ' + response['error']
+		print('Could not get all users. Error Message: ' + response['error'])
 
 main()
