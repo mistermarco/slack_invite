@@ -20,6 +20,9 @@ from slackclient import SlackClient
 # The channel ID. You can find this in the URL when using the web client, e.g. CBLS8CSAJ
 channel_id = ''
 
+# The source channel ID (if used). You can find this in the URL when using the web client, e.g. CBLS8CSAJ
+source_channel_id = ''
+
 # Delay - if you don't want to flood the API (in seconds) - some calls have rate limits
 api_call_delay = .5
 
@@ -28,7 +31,12 @@ def main():
 	# grab the token from the command line (so don't use this script on shared computers)
 	slack_token = os.environ["SLACK_API_TOKEN"]
 	sc = SlackClient(slack_token)
-	invite_all(sc, api_call_delay, channel_id)
+
+	# invite all workspace users to a channel
+	# invite_all(sc, api_call_delay, channel_id)
+
+	# invite all members of one (private) source channel to another channel
+	invite_private_channel_members(sc, api_call_delay, channel_id, source_channel_id)
 
 # Invite a single user to a channel
 # The user name is just for printing, it could be blank
@@ -65,6 +73,25 @@ def invite_all(sc, delay, channel):
 			else:
 				invite_user(sc, user_id, user_name, channel)
 				time.sleep(api_call_delay)
+
+	else:
+		print('Could not get all users. Error Message: ' + response['error'])
+
+# Invite all members of a specific, private channel to another public channel
+
+def invite_private_channel_members(sc, delay, channel, source_channel):
+	# https://api.slack.com/methods/groups.info
+	response = sc.api_call(
+  		"groups.info",
+		channel = source_channel,
+	)
+
+	if response['ok']:
+		users = response['group']['members']
+
+		for user_id in users:
+			invite_user(sc, user_id, 'private member', channel)
+			time.sleep(api_call_delay)
 
 	else:
 		print('Could not get all users. Error Message: ' + response['error'])
