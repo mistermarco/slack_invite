@@ -2,17 +2,22 @@ import os
 import json
 import time
 
-# https://github.com/slackapi/python-slackclient
-# pip install slackclient
-from slackclient import SlackClient
+# https://github.com/slackapi/python-slack-sdk
+# python3 -m venv <your installation directory>
+# source bin/activate
+# pip install slack_sdk
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 
 # This script invites all full members of a workspace to a particular channel
 
 # To use this script:
 # 1. set the channel ID below
 # 2. set a desired delay, or 0 if none is desired
-# 3. get yourself a test token at Slack (guard it with your life)
-# https://api.slack.com/custom-integrations/legacy-tokens
+# 3. create an app here: https://api.slack.com/apps
+# 4. Set user scopes as needed. The list of user scopes required can be found in the documentation:
+# 	https://api.slack.com/methods/conversations.members
+# 	https://api.slack.com/methods/conversations.invite
 # Then, call the script with the following on the command line, passing the token as a environment
 # variable:
 # SLACK_API_TOKEN="your-token" python slack-invite.py 
@@ -28,72 +33,193 @@ api_call_delay = .5
 
 
 def main():
+
 	# grab the token from the command line (so don't use this script on shared computers)
 	slack_token = os.environ["SLACK_API_TOKEN"]
-	sc = SlackClient(slack_token)
+	client = WebClient(token=slack_token)
 
 	# invite all workspace users to a channel
-	# invite_all(sc, api_call_delay, channel_id)
+	#invite_all(client, api_call_delay, channel_id)
+
+	#members = list_all_channel_members(client, channel_id)
+	#print(members)
+
+	#copy_members_between_channels(client, api_call_delay, channel_id, source_channel_id)
 
 	# invite all members of one (private) source channel to another channel
-	invite_private_channel_members(sc, api_call_delay, channel_id, source_channel_id)
+	#invite_private_channel_members(sc, api_call_delay, channel_id, source_channel_id)
 
+
+#------------------------------------------------------------------------------
+#
+# Invite all full members of a workspace to a particular channel
+#
+#------------------------------------------------------------------------------
+
+def invite_all(client, delay, channel_id):
+
+	users = list_all_users(client)
+
+	for u in users:
+		invite_user(client, u['id'], u['name'], channel_id)
+		time.sleep(delay)
+
+
+#------------------------------------------------------------------------------
+#
+# Invite multiple members to a channel
+#
+#------------------------------------------------------------------------------
+
+def invite_multiple_to_channel(client, delay, channel_id, users):
+
+	# TODO
+	print(users)
+
+
+#------------------------------------------------------------------------------
+#
 # Invite a single user to a channel
 # The user name is just for printing, it could be blank
+#
+#------------------------------------------------------------------------------
 
-def invite_user(sc, user_id, user_name, channel_id):
-	print('Inviting ' + user_name + ' with ID: ' + user_id + ' to channel ' + channel_id)
+def invite_user(client, user_id, user_name, channel_id):
 
-	response = sc.api_call(
-		"channels.invite",
-		channel = channel_id,
-		user = user_id)
+	try:
+		print('Inviting ' + user_name + ' with ID: ' + user_id + ' to channel ' + channel_id)
+	#	client.conversations_invite(channel=channel_id, users=user_id)
 
-	if response['ok']:
-		print('Success')
-	else:
-		print('Could not add ' + user_name + ' with ID: ' + user_id + ' to channel ' + channel_id + ' Error Message: ' + response['error'])
+	except SlackApiError as e:
+		print('Could not add ' + user_name + ' with ID: ' + user_id + 'to channel ' + channel_id + " Error: {}".format(e))
 
-# Invite all full members of a workspace to a particular channel
-# Skip if they are bots, deleted, restricted (multi-channel guest)
-# or ultra_restricted (single-channel guests)
 
-def invite_all(sc, delay, channel):
-	# https://api.slack.com/methods/users.list
-	response = sc.api_call(
-  		"users.list",
-	)
+#------------------------------------------------------------------------------
+#
+# Invite all members of a specific, private channel to another public channel
+#
+#------------------------------------------------------------------------------
 
-	if response['ok']:
-		users = [(u['id'], u['name'], u['deleted'], u['is_restricted'], u['is_ultra_restricted'], u['is_bot']) for u in response['members']]
+def copy_members_between_channels(client, delay, channel_id, source_channel_id):
 
-		for user_id, user_name, deleted, is_restricted, is_ultra_restricted, is_bot in users:
-			if (deleted or is_restricted or is_ultra_restricted or is_bot):
+	source_channel_members = list_all_channel_members(client, source_channel_id)
+
+	for user_id in source_channel_members:
+		invite_user(client, user_id, 'user', channel_id)
+		time.sleep(delay)
+
+#------------------------------------------------------------------------------
+#
+# Return a list of all regular members (no bots, single channel, etc.)
+#
+#------------------------------------------------------------------------------
+
+def list_all_users(client):
+
+	users = []
+	full_members = []
+
+	try:
+		# get list of members
+		users = list_users_with_pagination(client, users, False)
+
+		# filter out single channel members, etc.
+		for u in users:
+			if (u['deleted'] or u['is_restricted'] or u['is_ultra_restricted'] or u['is_bot']):
 				next
 			else:
-				invite_user(sc, user_id, user_name, channel)
-				time.sleep(api_call_delay)
+				full_members.append(u)
 
-	else:
-		print('Could not get all users. Error Message: ' + response['error'])
+		return full_members
 
-# Invite all members of a specific, private channel to another public channel
+	except SlackApiError as e:
+		print("Error: {}".format(e))
 
-def invite_private_channel_members(sc, delay, channel, source_channel):
-	# https://api.slack.com/methods/groups.info
-	response = sc.api_call(
-  		"groups.info",
-		channel = source_channel,
-	)
 
-	if response['ok']:
-		users = response['group']['members']
+#------------------------------------------------------------------------------
+#
+# Return a list of all users, supports pagination for larger result sets
+#
+#------------------------------------------------------------------------------
 
-		for user_id in users:
-			invite_user(sc, user_id, 'private member', channel)
-			time.sleep(api_call_delay)
+def list_users_with_pagination(client, users, cursor):
 
-	else:
-		print('Could not get all users. Error Message: ' + response['error'])
+	limit = 500
+
+	try:
+		# get list of members
+		if (cursor):
+			response = client.users_list(limit=limit, cursor=cursor)
+			users = users + response["members"]
+
+		else:
+			response = client.users_list(limit=limit)
+			users = users + response["members"]
+
+		if response['response_metadata']:
+			cursor = response['response_metadata']['next_cursor']
+			if cursor:
+				users = list_users_with_pagination(client, users, cursor)
+			else:
+				return users
+
+	except SlackApiError as e:
+		print("Error: {}".format(e))	
+
+	return users
+
+#------------------------------------------------------------------------------
+#
+# Return a list of all members from a channel
+#
+#------------------------------------------------------------------------------
+
+def list_all_channel_members(client, channel_id):
+
+	users = []
+
+	try:
+		# get list of members
+		users = list_channel_members_with_pagination(client, channel_id, users, False)
+
+		return users
+
+	except SlackApiError as e:
+		print("Error: {}".format(e))
+
+
+#------------------------------------------------------------------------------
+#
+# Return a list of all members from a channel, supports pagination
+# for larger result sets
+#
+#------------------------------------------------------------------------------
+
+def list_channel_members_with_pagination(client, channel_id, users, cursor):
+
+	limit = 200
+
+	try:
+		# get list of members
+		if (cursor):
+			response = client.conversations_members(channel=channel_id, limit=limit, cursor=cursor)
+			users = users + response["members"]
+
+		else:
+			response = client.conversations_members(channel=channel_id, limit=limit)
+			users = users + response["members"]
+
+		if response['response_metadata']:
+			cursor = response['response_metadata']['next_cursor']
+			if cursor:
+				users = list_channel_members_with_pagination(client, channel_id, users, cursor)
+			else:
+				return users
+
+	except SlackApiError as e:
+		print("Error: {}".format(e))	
+
+	return users
+
 
 main()
