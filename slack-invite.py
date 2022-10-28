@@ -39,7 +39,7 @@ def main():
 	client = WebClient(token=slack_token)
 
 	# invite all workspace users to a channel
-	#invite_all(client, api_call_delay, channel_id)
+	invite_all(client, api_call_delay, channel_id)
 
 	#members = list_all_channel_members(client, channel_id)
 	#print(members)
@@ -60,6 +60,12 @@ def invite_all(client, delay, channel_id):
 
 	users = list_all_users(client)
 
+	# this batches the invites and is faster, but an error could stop one of the
+	# batches from being imported
+	invite_multiple_users_to_channel(client, delay, channel_id, users)
+
+
+	# this invites users individually
 	for u in users:
 		invite_user(client, u['id'], u['name'], channel_id)
 		time.sleep(delay)
@@ -71,10 +77,19 @@ def invite_all(client, delay, channel_id):
 #
 #------------------------------------------------------------------------------
 
-def invite_multiple_to_channel(client, delay, channel_id, users):
+def invite_multiple_users_to_channel(client, delay, channel_id, users):
 
-	# TODO
-	print(users)
+	user_ids = []
+
+	# grab just the IDs of the users
+	for u in users:
+		user_ids.append(u['id'])
+
+	chunks = list(split(user_ids, 200))
+
+	for chunk in chunks:
+		invite_users(client, ','.join(chunk), channel_id)
+		time.sleep(delay)
 
 
 #------------------------------------------------------------------------------
@@ -88,11 +103,26 @@ def invite_user(client, user_id, user_name, channel_id):
 
 	try:
 		print('Inviting ' + user_name + ' with ID: ' + user_id + ' to channel ' + channel_id)
-	#	client.conversations_invite(channel=channel_id, users=user_id)
+		client.conversations_invite(channel=channel_id, users=user_id)
 
 	except SlackApiError as e:
 		print('Could not add ' + user_name + ' with ID: ' + user_id + 'to channel ' + channel_id + " Error: {}".format(e))
 
+#------------------------------------------------------------------------------
+#
+# Invite multiple users to a channel
+# users is a string of IDs, separated by commas
+#
+#------------------------------------------------------------------------------
+
+def invite_users(client, users, channel_id):
+
+	try:
+		print('Inviting ' + str(len(users.split(","))) + ' users to channel ' + channel_id)
+		client.conversations_invite(channel=channel_id, users=users)
+
+	except SlackApiError as e:
+		print('Could not add users to channel ' + channel_id + " Error: {}".format(e))
 
 #------------------------------------------------------------------------------
 #
@@ -220,6 +250,17 @@ def list_channel_members_with_pagination(client, channel_id, users, cursor):
 		print("Error: {}".format(e))	
 
 	return users
+
+#------------------------------------------------------------------------------
+#
+# Split a list of users into chunks
+#
+#------------------------------------------------------------------------------
+
+def split(list_a, chunk_size):
+
+  for i in range(0, len(list_a), chunk_size):
+    yield list_a[i:i + chunk_size]
 
 
 main()
